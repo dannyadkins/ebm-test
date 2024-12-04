@@ -35,7 +35,7 @@ def generate_target_data(n_samples=1000, pattern='two_bumps'):
     
     Args:
         n_samples: Number of samples to generate
-        pattern: One of ['two_bumps', 'ring', 'spiral', 'checkerboard']
+        pattern: One of ['two_bumps', 'ring', 'spiral', 'checkerboard', 'swiss_roll', 'dna']
     """
     if pattern == 'two_bumps':
         n_per_mode = n_samples // 2
@@ -91,6 +91,41 @@ def generate_target_data(n_samples=1000, pattern='two_bumps'):
         samples = np.concatenate(samples, axis=0)
         # Add small noise to avoid perfect grid alignment
         samples += np.random.normal(0, 0.1, samples.shape)
+        return torch.FloatTensor(samples)
+
+    elif pattern == 'swiss_roll':
+        t = np.random.uniform(3, 15, n_samples)
+        height = np.random.uniform(-2, 2, n_samples)
+        x = t * np.cos(t)
+        y = height
+        z = t * np.sin(t)
+        noise = np.random.normal(0, 0.1, (n_samples, 3))
+        samples = np.stack([x, y, z], axis=1) + noise
+        return torch.FloatTensor(samples)
+
+    elif pattern == 'dna':
+        # gen points along a double helix (dna-like structure)
+        t = np.linspace(0, 8*np.pi, n_samples)
+        radius = 2
+        pitch = 3
+        
+        # first strand
+        x1 = radius * np.cos(t)
+        y1 = radius * np.sin(t)
+        z1 = pitch * t/(2*np.pi)
+        strand1 = np.stack([x1, y1, z1], axis=1)
+        
+        # second helix strand (offset by pi)
+        x2 = radius * np.cos(t + np.pi)
+        y2 = radius * np.sin(t + np.pi)
+        z2 = z1  # Same height progression
+        strand2 = np.stack([x2, y2, z2], axis=1)
+        
+        # combime, add noise
+        samples = np.concatenate([strand1, strand2], axis=0)
+        samples = samples[np.random.choice(len(samples), n_samples)]  # Randomly sample points
+        samples += np.random.normal(0, 0.1, samples.shape)  # Add noise
+        
         return torch.FloatTensor(samples)
     
     else:
@@ -150,32 +185,39 @@ def visualize_model(model, real_data, title):
         plt.xlabel('x')
         plt.ylabel('Density')
         
-    else:  # 2D visualization
+    else:  # 2D or 3D visualization
         plt.figure(figsize=(12, 4))
         
-        # energy landscape plot
+        # energy landscape plot (only for 2D)
         plt.subplot(131)
-        x = np.linspace(-6, 6, 100)
-        y = np.linspace(-6, 6, 100)
-        X, Y = np.meshgrid(x, y)
-        points = torch.FloatTensor(np.stack([X.flatten(), Y.flatten()], axis=1))
-        
-        with torch.no_grad():
-            energies = model(points).reshape(100, 100)
-        
-        plt.contourf(X, Y, energies.numpy(), levels=20)
-        plt.colorbar(label='Energy')
-        plt.title('Energy Landscape')
-        plt.xlabel('x')
-        plt.ylabel('y')
-        
+        if input_dim == 2:
+            x = np.linspace(-6, 6, 100)
+            y = np.linspace(-6, 6, 100)
+            X, Y = np.meshgrid(x, y)
+            points = torch.FloatTensor(np.stack([X.flatten(), Y.flatten()], axis=1))
+            
+            with torch.no_grad():
+                energies = model(points).reshape(100, 100)
+            
+            plt.contourf(X, Y, energies.numpy(), levels=20)
+            plt.colorbar(label='Energy')
+            plt.title('Energy Landscape')
+            plt.xlabel('x')
+            plt.ylabel('y')
+        else:  # 3D case - skip energy landscape
+            plt.text(0.5, 0.5, 'Energy landscape\nnot shown for 3D', 
+                    ha='center', va='center')
         # real data distribution
         plt.subplot(132)
-        plt.scatter(real_data[:, 0], real_data[:, 1], alpha=0.1, s=1)
+        if input_dim == 2:
+            plt.scatter(real_data[:, 0], real_data[:, 1], alpha=0.1, s=1)
+            plt.axis('equal')
+        else:  # 3D scatter plot
+            ax = plt.subplot(132, projection='3d')
+            ax.scatter(real_data[:, 0], real_data[:, 1], real_data[:, 2], 
+                      alpha=0.1, s=1)
+            ax.view_init(elev=30, azim=45)
         plt.title('Data Distribution')
-        plt.xlabel('x')
-        plt.ylabel('y')
-        plt.axis('equal')
     
     # samples from model using softmax sampling
     plt.subplot(133)
@@ -188,18 +230,21 @@ def visualize_model(model, real_data, title):
         temp = 0.3
         probs = torch.softmax(-energies/temp, dim=0)
         
-        # sample 5k points according to probabilities
+        # sample points according to probabilities
         idx = torch.multinomial(probs.view(-1), 10000, replacement=True)
         samples = candidates[idx]
         
         if input_dim == 1:
             plt.hist(samples.numpy(), bins=50, density=True, alpha=0.5)
-        else:
+        elif input_dim == 2:
             plt.scatter(samples[:, 0], samples[:, 1], alpha=0.1, s=1)
             plt.axis('equal')
+        else:  # 3D scatter plot
+            ax = plt.subplot(133, projection='3d')
+            ax.scatter(samples[:, 0], samples[:, 1], samples[:, 2], 
+                      alpha=0.1, s=1)
+            ax.view_init(elev=30, azim=45)
         plt.title('Sampled from Model')
-        plt.xlabel('x')
-        plt.ylabel('y' if input_dim > 1 else 'Density')
     
     plt.suptitle(title)
     plt.tight_layout()
@@ -253,8 +298,8 @@ def find_best_architecture(pattern, training_time=5):
     return best_arch
 
 if __name__ == "__main__":
-    # Choose pattern: 'two_bumps', 'ring', 'spiral', or 'checkerboard'
-    pattern = 'checkerboard'
+    # Choose pattern: 'two_bumps', 'ring', 'spiral', 'checkerboard', 'swiss_roll', or 'dna'
+    pattern = 'swiss_roll'
     
     # Find best architecture first
     print("Searching for best architecture...")
