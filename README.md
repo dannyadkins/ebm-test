@@ -1,11 +1,13 @@
 # Energy-based Model Demo
 
-A minimal example showing how energy-based models work. This code learns a simple 1D two-bump distribution using an energy-based model (EBM).
+EBM model that identifies real vs fake data points, trained using contrastive divergence - basically pushing down energy for real samples while pushing up energy for random noise.
 
-The model learns to assign low energy to real data points and high energy to fake/noise points. It's trained using contrastive divergence - basically pushing down energy for real samples while pushing up energy for random noise.
-
-The visualization shows:
+viz shows:
 
 - The learned energy landscape
-- The actual data distribution (two Gaussian bumps)
-- Samples generated from the model using softmax sampling
+- The actual data distribution (two Gaussian bumps, ring, or spiral)
+- Samples generated from the model using softmax / temperature (to see what the model thinks is likely realistic from a bucket of random)
+
+using softplus is critical here because we can learn from any high-energy data while getting really good at low-energy data
+tanh saturates quickly at extremes so it doesnt really learn as much from fake data i think, gradient becomes zero for anything that looks fake
+need one of the activations because otherwise totally unstable, it just learns to hyper maximize low energy for the real data
