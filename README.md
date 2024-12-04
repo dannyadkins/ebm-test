@@ -11,3 +11,6 @@ viz shows:
 using softplus is critical here because we can learn from any high-energy data while getting really good at low-energy data
 tanh saturates quickly at extremes so it doesnt really learn as much from fake data i think, gradient becomes zero for anything that looks fake
 need one of the activations because otherwise totally unstable, it just learns to hyper maximize low energy for the real data
+
+# Sequential
+similar but uses mean pooling... trying to think of a simple example that breaks the mean pooling 
