@@ -35,7 +35,7 @@ def generate_target_data(n_samples=1000, pattern='two_bumps'):
     
     Args:
         n_samples: Number of samples to generate
-        pattern: One of ['two_bumps', 'ring', 'spiral']
+        pattern: One of ['two_bumps', 'ring', 'spiral', 'checkerboard']
     """
     if pattern == 'two_bumps':
         n_per_mode = n_samples // 2
@@ -61,6 +61,36 @@ def generate_target_data(n_samples=1000, pattern='two_bumps'):
         x = (r + noise) * np.cos(theta)
         y = (r + noise) * np.sin(theta)
         samples = np.stack([x, y], axis=1)
+        return torch.FloatTensor(samples)
+    
+    elif pattern == 'checkerboard':
+        # Generate points in a 4x4 checkerboard pattern - very challenging!
+        samples = []
+        grid_size = 4
+        square_size = 2.0  # Each square is 2x2 units
+        points_per_square = n_samples // (grid_size * grid_size // 2)  # Only fill alternate squares
+        
+        for i in range(grid_size):
+            for j in range(grid_size):
+                # Only add points in alternating squares
+                if (i + j) % 2 == 0:
+                    # Generate random points within this square
+                    x = np.random.uniform(
+                        i * square_size - grid_size, 
+                        (i + 1) * square_size - grid_size,
+                        points_per_square
+                    )
+                    y = np.random.uniform(
+                        j * square_size - grid_size,
+                        (j + 1) * square_size - grid_size,
+                        points_per_square
+                    )
+                    square_points = np.stack([x, y], axis=1)
+                    samples.append(square_points)
+        
+        samples = np.concatenate(samples, axis=0)
+        # Add small noise to avoid perfect grid alignment
+        samples += np.random.normal(0, 0.1, samples.shape)
         return torch.FloatTensor(samples)
     
     else:
@@ -223,12 +253,13 @@ def find_best_architecture(pattern, training_time=5):
     return best_arch
 
 if __name__ == "__main__":
-    # Choose pattern: 'two_bumps', 'ring', or 'spiral'
-    pattern = 'spiral'
+    # Choose pattern: 'two_bumps', 'ring', 'spiral', or 'checkerboard'
+    pattern = 'checkerboard'
     
     # Find best architecture first
     print("Searching for best architecture...")
-    best_hidden_dims = find_best_architecture(pattern)
+    # best_hidden_dims = find_best_architecture(pattern)
+    best_hidden_dims = [32, 32, 32]  
     
     # Train with best architecture
     print("\nTraining with best architecture...")
