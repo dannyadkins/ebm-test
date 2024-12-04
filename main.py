@@ -4,19 +4,27 @@ import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import time 
 
 # learning a simple 1d two-bump distribution with an energy model
 # just a minimal example to show how ebms work
 
 class SimpleEBM(nn.Module):
     """small net that learns the energy landscape for 1d data"""
-    def __init__(self, input_dim=1):
+    def __init__(self, input_dim=1, hidden_dims=[32]):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1)
-        )
+        
+        layers = []
+        prev_dim = input_dim
+        for h_dim in hidden_dims:
+            layers.extend([
+                nn.Linear(prev_dim, h_dim),
+                nn.ReLU()
+            ])
+            prev_dim = h_dim
+        layers.append(nn.Linear(prev_dim, 1))
+            
+        self.net = nn.Sequential(*layers)
         
     def forward(self, x):
         # raw energy (low = more likely to be real, high = fake)
@@ -167,14 +175,66 @@ def visualize_model(model, real_data, title):
     plt.tight_layout()
     plt.show()
 
+def find_best_architecture(pattern, training_time=5):
+    """search for the fastest learning architecture by measuring loss improvement over fixed time"""
+    real_data = generate_target_data(10000, pattern=pattern)
+    input_dim = real_data.shape[1]
+    
+
+    # early experiments showed that wider models didnt help, so trying with thin and many layered models 
+    architectures = [
+        [8, 8, 8], [12, 12, 12], [16, 16, 16],  # three layers
+        [8, 8, 8, 8], [12, 12, 12, 12], [16, 16, 16, 16],  # four layers 
+        [8, 8, 8, 8, 8], [12, 12, 12, 12, 12], [16, 16, 16, 16, 16],  # five layers
+        [8, 8, 8, 8, 8, 8], [12, 12, 12, 12, 12, 12], [16, 16, 16, 16, 16, 16],  # six layers
+        [8, 8, 8, 8, 8, 8, 8], [12, 12, 12, 12, 12, 12, 12], [16, 16, 16, 16, 16, 16, 16]  # seven layers
+    ]
+    best_arch = None
+    best_loss_curve = []
+    best_loss_improvement = float('-inf')
+    
+    for hidden_dims in architectures:
+        print(f"\nTrying architecture with hidden dims: {hidden_dims}")
+        
+        model = SimpleEBM(input_dim=input_dim, hidden_dims=hidden_dims)
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        
+        losses = []
+        start_time = time.time()
+        
+        while time.time() - start_time < training_time:
+            loss = train_step(model, optimizer, real_data)
+            losses.append(loss)
+            
+        # calc rate of improvement over time
+        initial_loss = sum(losses[:10]) / 10  # avg first 10 losses
+        final_loss = sum(losses[-10:]) / 10   # avg last 10 losses
+        loss_improvement = initial_loss - final_loss
+        
+        print(f"Loss improvement: {loss_improvement:.4f}")
+        
+        if loss_improvement > best_loss_improvement:
+            best_loss_improvement = loss_improvement
+            best_arch = hidden_dims
+            best_loss_curve = losses
+    
+    print(f"\nBest architecture found: {best_arch}")
+    print(f"Best loss improvement: {best_loss_improvement:.4f}")
+    return best_arch
+
 if __name__ == "__main__":
     # Choose pattern: 'two_bumps', 'ring', or 'spiral'
     pattern = 'spiral'
     
-    # setup
+    # Find best architecture first
+    print("Searching for best architecture...")
+    best_hidden_dims = find_best_architecture(pattern)
+    
+    # Train with best architecture
+    print("\nTraining with best architecture...")
     real_data = generate_target_data(10000, pattern=pattern)
     input_dim = real_data.shape[1]
-    model = SimpleEBM(input_dim=input_dim)
+    model = SimpleEBM(input_dim=input_dim, hidden_dims=best_hidden_dims)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # training settings
