@@ -133,17 +133,82 @@ def generate_bimodal_points(n_samples=1000, points_per_set=30):
         
     return torch.FloatTensor(np.stack(sets))
 
+def generate_multimodal_points(n_samples=1000, points_per_set=30):
+    """make sets of points in multiple clusters with varying densities - this breaks mean pooling since
+    the model can't capture the relative densities and spatial relationships between clusters"""
+    sets = []
+    for _ in range(n_samples):
+        # randomly choose number of clusters (2-5)
+        n_clusters = 10
+        
+        # generate cluster centers with minimum spacing
+        centers = []
+        densities = []
+        min_spacing = 2.0
+        
+        # first cluster
+        centers.append(np.random.uniform(-4, 4, 2))
+        densities.append(np.random.uniform(0.1, 0.4))
+        
+        # add more clusters with spacing constraints
+        for _ in range(n_clusters-1):
+            while True:
+                new_center = np.random.uniform(-4, 4, 2)
+                if all(np.linalg.norm(new_center - c) > min_spacing for c in centers):
+                    centers.append(new_center)
+                    densities.append(np.random.uniform(0.1, 0.4))
+                    break
+        
+        # normalize densities to sum to 1
+        densities = np.array(densities) / sum(densities)
+        
+        # assign points to clusters based on densities
+        points = []
+        remaining_points = points_per_set
+        for i in range(n_clusters):
+            if i == n_clusters - 1:
+                n_cluster_points = remaining_points
+            else:
+                n_cluster_points = int(points_per_set * densities[i])
+                remaining_points -= n_cluster_points
+            
+            # generate points for this cluster
+            cluster_points = np.random.normal(0, 0.2, (n_cluster_points, 2)) + centers[i]
+            points.append(cluster_points)
+        
+        # combine all points
+        points = np.vstack(points)
+        sets.append(points)
+        
+    return torch.FloatTensor(np.stack(sets))
+
 # get points based on pattern type
 pattern_funcs = {
     'circle': generate_circle_points,
     'spiral': generate_spiral_points,
     'bimodal': generate_bimodal_points,
-    'line': generate_line_points
+    'line': generate_line_points,
+    'multimodal': generate_multimodal_points
 }
 
-def generate_random_points(n_samples=1000, points_per_set=30):
-    """make random scattered points"""
-    return torch.randn(n_samples, points_per_set, 2) * 4
+def generate_random_points(n_samples=1000, points_per_set=30, pattern='multimodal'):
+    """Generate fake data by perturbing real data patterns"""
+    real_sets = pattern_funcs.get(pattern, generate_line_points)(n_samples, points_per_set)
+    
+    # add  noise to create fake data
+    # scale noise by the std of the real data to maintain relative scale
+    noise_scale = 0.5 * torch.std(real_sets)
+    noise = torch.randn_like(real_sets) * noise_scale
+    
+    # also randomly permute some of the points to break patterns
+    fake_sets = real_sets + noise
+    
+    # vec permutation instead of loop
+    should_permute = torch.rand(len(fake_sets)) < 0.2
+    perms = torch.stack([torch.randperm(points_per_set) for _ in range(should_permute.sum())])
+    fake_sets[should_permute] = fake_sets[should_permute].gather(1, perms.unsqueeze(-1).expand(-1, -1, 2))
+            
+    return fake_sets
 
 def train_step(model, optimizer, real_sets):
     """do one training step"""
@@ -191,10 +256,10 @@ def visualize_model(model, epoch, pattern='circle'):
         n_random = n_test_sets - n_real
         
         # get both types of points
-        random_sets = generate_random_points(n_random, points_per_set=5)
+        random_sets = generate_random_points(n_random, points_per_set=30)
 
         # whether to mix in real data 
-        mix_real = False 
+        mix_real = True 
 
         if mix_real:
             real_sets = pattern_funcs.get(pattern, generate_line_points)(n_real)
@@ -244,7 +309,7 @@ if __name__ == "__main__":
     n_epochs = 5000
     batch_size = 100
     vis_every = 1000
-    pattern = 'line'  # can be circle, spiral, line, or bimodal
+    pattern = 'multimodal'  # can be circle, spiral, line, bimodal, or multimodal
     
     # create model
     model = SequentialEBM()
